@@ -19,7 +19,7 @@ def setup_logger(log_dir: str = 'logs', max_file_size: int = 10485760, backup_co
         'version': 1,
         'disable_existing_loggers': False,
         'formatters': {
-            'standard': {'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'},
+            'standard': {'format': '%(asctime)s - %(name)s - %(levelname)s - %(filename)s - %(message)s'},
         },
         'filters': {
             'info_and_below': {

@@ -1,44 +1,73 @@
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from core.settings import settings
+from databases.base import RatePoint, RateRepositoryProtocol
 from databases.mongo.base import rate_db
-from databases.mongo.repository import RatePoint, RateRepository
+from databases.mongo.repository import RateRepository
 from services.parser import RatesParser
+from services.worker import AsyncWorkerPool
 
 logger = logging.getLogger('app_logger')
 
 SYMBOL_MAP_ID = {s['name']: s['id'] for s in settings.AVAILABLE_SYMBOLS}
 SYMBOLS_IDS = [s['id'] for s in settings.AVAILABLE_SYMBOLS]
+SubscriberId = str
+
+
+@dataclass
+class Subscriber:
+    callback: Callable[[RatePoint], Awaitable[None]]
+    asset_id: int
 
 
 class RateService:
-    def __init__(self, repository: RateRepository, parser: RatesParser):
+    """
+    Service that manages currency rate updates:
+    - receives real-time rate data,
+    - stores it in the database
+    - notifies active subscribers
+    """
+
+    def __init__(
+        self,
+        repository: RateRepositoryProtocol,
+        parser: RatesParser,
+        notifier_worker_pool: AsyncWorkerPool,
+        db_worker_pool: AsyncWorkerPool,
+    ):
         self.repository = repository
         self.parser = parser
-        self.subscribers: dict[str, Callable[[RatePoint], Awaitable[None]]] = {}
+        self.notifier_pool = notifier_worker_pool
+        self.db_worker_pool = db_worker_pool
+        self.subscribers: dict[SubscriberId, Subscriber] = {}
 
     async def start(self):
         async for rates in self.parser.stream_rates():
-            points = []
+            points, timestamp = [], int(time.time())
             for rate in rates:
                 if rate['Symbol'] in SYMBOL_MAP_ID:
                     value = (rate['Ask'] + rate['Bid']) / 2
                     point = RatePoint(
-                        assetId=SYMBOL_MAP_ID[rate['Symbol']], symbol=rate['Symbol'], time=int(time.time()), value=value
+                        assetId=SYMBOL_MAP_ID[rate['Symbol']],
+                        assetName=rate['Symbol'],
+                        time=timestamp,
+                        value=value,
                     )
-                    points.append(point)
-                    await self._notify_subscribers(point)
+                    points.append(point.copy())
+                    self._notify_subscribers(point)
             if points:
                 logger.debug(f'Save new points: {points=}')
-                await self.repository.insert_many(points)
+                self.db_worker_pool.submit(self.repository.insert_many, points)
 
-    def subscribe(self, subscriber_id: str, callback: Callable[[RatePoint], Awaitable[None]]):
-        self.unsubscribe(subscriber_id)
-        self.subscribers[subscriber_id] = callback
-        logger.info(f'New subscriber: {subscriber_id}')
+    def subscribe(self, subscriber_id: str, callback: Callable[[RatePoint], Awaitable[None]], asset_id: int):
+        if self.asset_id_is_available(asset_id):
+            self.unsubscribe(subscriber_id)
+            self.subscribers[subscriber_id] = Subscriber(callback, asset_id)
+            logger.info(f'New subscriber: {subscriber_id}')
 
     def unsubscribe(self, subscriber_id: str):
         if subscriber_id in self.subscribers:
@@ -46,12 +75,13 @@ class RateService:
             logger.info(f'Unsubscribe: {subscriber_id}')
 
     async def get_history(self, asset_id: int) -> list[RatePoint]:
-        return await self.repository.get_all_by_period(asset_id=asset_id)
+        return await self.repository.get_assets_points(asset_id=asset_id)
 
-    async def _notify_subscribers(self, point: RatePoint):
-        for subscriber_id, callback in self.subscribers.items():
+    def _notify_subscribers(self, point: RatePoint):
+        for subscriber_id, subscriber in self.subscribers.items():
             try:
-                await callback(point)
+                if point['assetId'] == subscriber.asset_id:
+                    self.notifier_pool.submit(subscriber.callback, point)
             except Exception as e:
                 logger.error(f'Error while notify subscriber {subscriber_id}: {e}')
 

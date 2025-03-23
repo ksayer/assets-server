@@ -9,7 +9,9 @@ services:
       - mongo
     environment:
       - MONGO_URI=mongodb://mongo:27017
-    command: python main.py
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
 
   mongo:
     image: mongo:latest
@@ -17,6 +19,7 @@ services:
       - "27017"
     volumes:
       - mongo_data:/data/db
+    restart: unless-stopped
 
 volumes:
   mongo_data:

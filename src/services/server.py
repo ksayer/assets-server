@@ -1,5 +1,6 @@
 import json
 import logging
+from enum import StrEnum
 
 import websockets
 from websockets import ServerConnection
@@ -8,6 +9,11 @@ from databases.mongo.repository import RatePoint
 from services.rates_service import RateService
 
 logger = logging.getLogger('app_logger')
+
+
+class Actions(StrEnum):
+    ASSETS = 'assets'
+    SUBSCRIBE = 'subscribe'
 
 
 class WebsocketServer:
@@ -21,6 +27,8 @@ class WebsocketServer:
                 await self._handle_message(connection, message, client_id)
         except websockets.exceptions.ConnectionClosed:
             logger.info('Connection closed')
+        except Exception as e:
+            logger.error(f'Error while processing message: {e}')
         finally:
             self.service.unsubscribe(client_id)
 
@@ -28,17 +36,19 @@ class WebsocketServer:
         try:
             data = json.loads(message)
             action = data.get('action')
-            if action == 'assets':
+            if action == Actions.ASSETS:
                 response = {'action': 'assets', 'message': {'assets': self.service.get_symbols()}}
                 await connection.send(json.dumps(response))
 
-            elif action == 'subscribe':
+            elif action == Actions.SUBSCRIBE:
                 asset_id = data.get('message', {}).get('assetId')
-                if self.service.asset_id_is_available(asset_id=asset_id):
-                    self.service.subscribe(client_id, lambda point: self._send_point(connection, asset_id, point))
-                    await self._send_history(connection, asset_id)
-                else:
-                    logger.warning(f'Unsupported asset: {asset_id=}')
+                await self._send_history(connection=connection, asset_id=asset_id)
+                logger.debug(f'Sent history for {client_id=} {asset_id=}')
+                self.service.subscribe(
+                    subscriber_id=client_id,
+                    callback=lambda point: self._send_point(connection, point),
+                    asset_id=asset_id,
+                )
             else:
                 logger.warning(f'Unknown action: {action=}')
 
@@ -48,17 +58,17 @@ class WebsocketServer:
             logger.warning(f'Error processing message: {e}')
 
     @staticmethod
-    async def _send_point(connection: ServerConnection, asset_id: int, point: RatePoint):
+    async def _send_point(connection: ServerConnection, point: RatePoint):
         try:
-            if asset_id == point['assetId']:
-                response = {'action': 'point', 'message': point}
-                await connection.send(json.dumps(response))
-                logger.debug(f'Sent point to subscriber {point=}')
+            response = {'action': 'point', 'message': point}
+            await connection.send(json.dumps(response))
+            logger.debug(f'Sent point to subscriber {point=}')
         except websockets.exceptions.ConnectionClosed:
-            logger.info('Client disconnected while sending point: {}')
+            logger.exception('Client disconnected while sending point')
+        except Exception as e:
+            logger.exception(f'Client disconnected while sending point: {e}')
 
     async def _send_history(self, connection: ServerConnection, asset_id: int):
         points = await self.service.get_history(asset_id=asset_id)
         response = {'action': 'asset_history', 'message': {'points': points}}
         await connection.send(json.dumps(response))
-        logger.debug(f'Sent history for {asset_id=}')

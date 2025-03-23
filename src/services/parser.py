@@ -33,6 +33,8 @@ class RatesResponse(TypedDict):
 
 
 class RatesParser:
+    """Periodically fetches currency rates from a remote API and streams them as an async generator."""
+
     URL: ClassVar[str] = 'https://rates.emcont.com/'
 
     def __init__(self, interval: float = settings.PARSER_INTERVAL, timeout: float = settings.PARSER_TIMEOUT):
@@ -46,11 +48,13 @@ class RatesParser:
                 try:
                     yield (await self._fetch_rates(session))['Rates']
                 except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                    logging.error(f'Error while fetching rates: {e}')
+                    logging.error(f'Error while fetching rates: {e=}')
                     yield []
 
                 elapsed = time.perf_counter() - start_time
-                await asyncio.sleep(max(0.0, self.interval - elapsed))
+                delay = self.interval - elapsed
+                if delay > 0:
+                    await asyncio.sleep(delay)
 
     async def _fetch_rates(self, session: aiohttp.ClientSession) -> RatesResponse:
         async with session.get(self.URL) as response:
