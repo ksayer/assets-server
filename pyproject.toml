@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "aiohttp>=3.11.14",
+    "motor>=3.7.0",
+    "pydantic-settings>=2.8.1",
     "websockets>=15.0.1",
 ]
 
