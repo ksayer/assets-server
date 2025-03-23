@@ -13,5 +13,7 @@ class Settings(BaseSettings):
         {'id': 5, 'name': 'USDCAD'},
     ]
 
+    MONGO_URI: str = 'mongodb://mongo:27017'
+
 
 settings = Settings()
