@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings
 
 
@@ -21,6 +23,9 @@ class Settings(BaseSettings):
     ]
 
     MONGO_URI: str = 'mongodb://mongo:27017'
+    REDIS_HOST: str = 'redis'
+    REDIS_PORT: int = 6379
+    DB: Literal["mongo", "redis"] = 'redis'
 
 
 settings = Settings()

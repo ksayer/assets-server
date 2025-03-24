@@ -6,11 +6,20 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - mongo
-    environment:
-      - MONGO_URI=mongodb://mongo:27017
+      - redis
     volumes:
       - ./logs:/app/logs
+    environment:
+      - DB=redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:latest
+    command: ["redis-server", "--appendonly", "yes"]
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
     restart: unless-stopped
 
   mongo:
@@ -22,4 +31,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  redis_data:
   mongo_data:
