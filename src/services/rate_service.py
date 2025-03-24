@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -6,8 +5,6 @@ from typing import Awaitable, Callable
 
 from core.settings import settings
 from databases.base import RatePoint, RateRepositoryProtocol
-from databases.mongo.base import rate_db
-from databases.mongo.repository import RateRepository
 from services.parser import RatesParser
 from services.worker_pool import AsyncWorkerPool
 
@@ -93,11 +90,3 @@ class RateService:
     def _asset_id_is_available(asset_id: int):
         return asset_id in SYMBOLS_IDS
 
-
-async def main():
-    service = RateService(repository=RateRepository(db=rate_db), parser=RatesParser())
-    logger.info(await service.get_history(2))
-
-
-if __name__ == '__main__':
-    asyncio.run(main())

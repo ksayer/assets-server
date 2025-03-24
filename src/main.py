@@ -6,8 +6,10 @@ import websockets
 
 from core.logger import setup_logger
 from core.settings import settings
-from databases.mongo.base import client, rate_db
-from databases.mongo.repository import RateRepository
+from databases.mongo.base import get_rate_db, mongo_client
+from databases.mongo.repository import RateRepositoryMongo
+from databases.redis.base import redis_client
+from databases.redis.repository import RateRepositoryRedis
 from services.parser import RatesParser
 from services.rate_service import RateService
 from services.server import WebsocketServer
@@ -29,8 +31,13 @@ async def main():
     loop.add_signal_handler(signal.SIGINT, handle_shutdown)
     loop.add_signal_handler(signal.SIGTERM, handle_shutdown)
 
-    repository = RateRepository(db=rate_db)
-    await repository.init_db()
+    if settings.DB == 'redis':
+        logger.info('Use redis as DB')
+        repository = RateRepositoryRedis(db=redis_client)
+    else:
+        logger.info('Use Mongo as DB')
+        repository = RateRepositoryMongo(db=await get_rate_db())
+
 
     async with (
         AsyncWorkerPool(name='NotifierPool', concurrency=settings.NOTIFIER_WORKER_CONCURRENCY) as notifier_worker_pool,
@@ -60,7 +67,12 @@ async def main():
             ws_server.close()
             await ws_server.wait_closed()
 
-    client.close()
+    if settings.DB == 'redis':
+        await redis_client.close()
+        await redis_client.connection_pool.disconnect()
+    else:
+        mongo_client.close()
+
     logger.info('App stopped.')
 
 

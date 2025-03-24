@@ -6,7 +6,7 @@ Asynchronous WebSocket server that streams real-time currency rates and stores h
 
 - Fetches currency rates every second from https://rates.emcont.com/
 - Calculates average price from `bid` and `ask`
-- Stores rate points in MongoDB with index
+- Stores rate points in Redis/Mongo (depends on DB value in environment docker-compose.yml (mongo or redis), default redis)
 - WebSocket server on port `8080`
 - Clients can:
   - Request available assets
@@ -22,7 +22,6 @@ Asynchronous WebSocket server that streams real-time currency rates and stores h
 - **Python 3.13**
 - **aiohttp** — async HTTP client for fetching rates
 - **websockets** — for bi-directional communication
-- **motor** — async MongoDB driver
 - **Docker + Docker Compose** — containerized environment
 - **Ruff**, **mypy**, **pre-commit** — for linting and static analysis
 
