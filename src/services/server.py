@@ -6,7 +6,7 @@ import websockets
 from websockets import ServerConnection
 
 from databases.mongo.repository import RatePoint
-from services.rates_service import RateService
+from services.rate_service import RateService
 
 logger = logging.getLogger('app_logger')
 

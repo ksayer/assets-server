@@ -9,7 +9,7 @@ from databases.base import RatePoint, RateRepositoryProtocol
 from databases.mongo.base import rate_db
 from databases.mongo.repository import RateRepository
 from services.parser import RatesParser
-from services.worker import AsyncWorkerPool
+from services.worker_pool import AsyncWorkerPool
 
 logger = logging.getLogger('app_logger')
 
@@ -64,8 +64,8 @@ class RateService:
                 self.db_worker_pool.submit(self.repository.insert_many, points)
 
     def subscribe(self, subscriber_id: str, callback: Callable[[RatePoint], Awaitable[None]], asset_id: int):
-        if self.asset_id_is_available(asset_id):
-            self.unsubscribe(subscriber_id)
+        self.unsubscribe(subscriber_id)
+        if self._asset_id_is_available(asset_id):
             self.subscribers[subscriber_id] = Subscriber(callback, asset_id)
             logger.info(f'New subscriber: {subscriber_id}')
 
@@ -90,7 +90,7 @@ class RateService:
         return settings.AVAILABLE_SYMBOLS
 
     @staticmethod
-    def asset_id_is_available(asset_id: int):
+    def _asset_id_is_available(asset_id: int):
         return asset_id in SYMBOLS_IDS
 
 

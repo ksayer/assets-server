@@ -47,8 +47,8 @@ class RatesParser:
                 start_time = time.perf_counter()
                 try:
                     yield (await self._fetch_rates(session))['Rates']
-                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                    logging.error(f'Error while fetching rates: {e=}')
+                except Exception as e:
+                    logging.warning(f'Error while fetching rates: {e=}')
                     yield []
 
                 elapsed = time.perf_counter() - start_time

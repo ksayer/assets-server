@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Awaitable, Callable
+from typing import Callable
 
 logger = logging.getLogger('app_logger')
 
@@ -9,19 +9,41 @@ class AsyncWorkerPool:
     """
     Asynchronous worker pool that executes coroutines concurrently
     with a limit on concurrency and queue size.
+    Should be used as a context manager
     """
 
     def __init__(
-        self, concurrency: int = 100, max_size: int = 100, timeout: float | None = 0.5, name: str = 'AsyncWorkerPool'
+        self,
+        concurrency: int = 100,
+        max_size: int = 100,
+        timeout: float | None = 0.5,
+        name: str = 'AsyncWorkerPool',
     ):
         self.concurrency = concurrency
         self.timeout = timeout
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=max_size)
-        self._workers: list[Awaitable] = []
+        self._workers: list[asyncio.Task] = []
         self.name = name
         self._running = False
 
-    async def start(self):
+    async def __aenter__(self):
+        await self._start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._stop()
+
+    def submit(self, func: Callable, *args):
+        """Adds a coroutine to the queue for execution."""
+        try:
+            if not self._running:
+                logger.warning(f'{self.name} is not running')
+                return
+            self._queue.put_nowait(func(*args))
+        except asyncio.QueueFull:
+            logger.warning(f'{self.name} queue is full. Task was dropped.')
+
+    async def _start(self):
         self._running = True
         logger.info(f'{self.name} start: concurrency={self.concurrency}, timeout={self.timeout}')
 
@@ -29,22 +51,10 @@ class AsyncWorkerPool:
             task = asyncio.create_task(self._worker_loop(worker_id))
             self._workers.append(task)
 
-        await asyncio.gather(*self._workers)
-
-    def submit(self, func: Callable, *args):
-        """Adds a coroutine to the queue for execution."""
-        try:
-            if not self._running:
-                logger.warning('Warker is not running')
-                return
-            self._queue.put_nowait(func(*args))
-        except asyncio.QueueFull:
-            logger.warning('Task queue is full. Task was dropped.')
-
-    async def stop(self):
+    async def _stop(self):
         self._running = False
         for _ in range(self.concurrency):
-            self._queue.put_nowait(None)
+            await self._queue.put(None)
 
         await self._wait_closed()
 
@@ -66,7 +76,7 @@ class AsyncWorkerPool:
             finally:
                 self._queue.task_done()
 
-        logger.info(f'Worker {worker_id} exit loop')
+        logger.info(f'{self.name} {worker_id} exit loop')
 
     async def _wait_closed(self):
         await asyncio.gather(*self._workers, return_exceptions=True)
